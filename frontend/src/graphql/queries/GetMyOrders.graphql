@@ -1,0 +1,9 @@
+query GetMyOrders {
+  myOrders {
+    id
+    description
+    amount
+    status
+    customer { id username }
+  }
+}

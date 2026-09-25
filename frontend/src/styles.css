@@ -1,0 +1,26 @@
+:root { font-family: Inter, system-ui, sans-serif; color: #e8eef7; background: #0b1220; font-synthesis: none; }
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; }
+button, input, textarea { font: inherit; }
+button { cursor: pointer; border: 1px solid #3c4a61; color: #e8eef7; background: #172235; border-radius: 7px; padding: .65rem .9rem; }
+button:hover, button.active { background: #25466b; border-color: #5b9bd5; }
+.shell { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
+.topbar { display: flex; justify-content: space-between; gap: 2rem; align-items: flex-start; border-bottom: 1px solid #26364e; padding-bottom: 1.5rem; }
+h1 { margin: 0 0 .35rem; font-size: 1.7rem; } h2 { margin-top: 0; } h3 { margin: .7rem 0; }
+p { color: #aebbd0; } .identity { display: flex; flex-direction: column; align-items: flex-end; gap: .3rem; color: #aebbd0; }
+.tabs { display: flex; gap: .6rem; margin: 1.5rem 0; flex-wrap: wrap; }
+.panel { background: #111b2d; border: 1px solid #26364e; border-radius: 12px; padding: 1.25rem; }
+.panel-heading { display: flex; justify-content: space-between; align-items: center; }
+.order-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1rem; }
+.order { background: #18263b; border: 1px solid #30435d; border-radius: 9px; padding: 1rem; }
+.order-top { display: flex; justify-content: space-between; color: #8eb9e5; } .status { color: #88d6a1; font-size: .8rem; }
+.internal { color: #f0c674; }
+.actions { display: flex; gap: .45rem; flex-wrap: wrap; margin-top: .8rem; }
+.actions button { padding: .4rem .55rem; font-size: .85rem; }
+.create-form { display: flex; gap: .6rem; margin-bottom: 1.25rem; flex-wrap: wrap; } .create-form input { flex: 1; min-width: 150px; }
+input, textarea { width: 100%; color: #e8eef7; background: #0d1727; border: 1px solid #3c4a61; border-radius: 6px; padding: .65rem; margin: .35rem 0 1rem; }
+label { display: block; color: #c7d3e4; }
+.primary { background: #2877b9; border-color: #4b9bda; } .primary:hover { background: #348bd0; }
+.muted { color: #8e9db3; } .scenarios { display: flex; gap: .5rem; flex-wrap: wrap; margin: 1rem 0; }
+.editor { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.response { border-top: 1px solid #30435d; margin-top: 1.5rem; padding-top: 1rem; } .response li { color: #ff9d9d; } pre { white-space: pre-wrap; overflow: auto; background: #0d1727; padding: 1rem; border-radius: 6px; }

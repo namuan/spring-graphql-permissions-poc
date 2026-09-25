@@ -1,0 +1,48 @@
+# Java and Gradle
+**/.gradle/
+**/build/
+!backend/gradle/wrapper/gradle-wrapper.jar
+*.class
+*.jar
+!backend/gradle/wrapper/gradle-wrapper.jar
+hs_err_pid*
+replay_pid*
+
+# Node, TypeScript, and Vite
+**/node_modules/
+**/dist/
+**/.vite/
+**/coverage/
+**/*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
+
+# Keep the npm lockfile committed for reproducible installs.
+!frontend/package-lock.json
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+
+# Logs and temporary files
+*.log
+*.tmp
+*.swp
+*.swo
+*~
+
+# Editors and operating systems
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Local container state
+.podman/

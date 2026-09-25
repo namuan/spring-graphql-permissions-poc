@@ -1,0 +1,44 @@
+scalar BigDecimal
+
+type Query {
+    order(id: ID!): Order
+    myOrders: [Order!]!
+    orders: [Order!]!
+}
+
+type Mutation {
+    createOrder(input: CreateOrderInput!): Order!
+    updateOrder(id: ID!, input: UpdateOrderInput!): Order!
+    cancelOrder(id: ID!): Order!
+    deleteOrder(id: ID!): Boolean!
+}
+
+type Order {
+    id: ID!
+    description: String!
+    amount: BigDecimal!
+    status: OrderStatus!
+    customer: User!
+    internalNotes: String
+}
+
+type User {
+    id: ID!
+    username: String!
+}
+
+input CreateOrderInput {
+    description: String!
+    amount: BigDecimal!
+}
+
+input UpdateOrderInput {
+    description: String
+    amount: BigDecimal
+}
+
+enum OrderStatus {
+    OPEN
+    CANCELLED
+    COMPLETED
+}

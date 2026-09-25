@@ -1,0 +1,10 @@
+query GetOrders {
+  orders {
+    id
+    description
+    amount
+    status
+    customer { id username }
+    internalNotes
+  }
+}

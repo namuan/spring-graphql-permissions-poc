@@ -1,0 +1,1067 @@
+# GraphQL Security POC — Full Plan
+
+## 1. Objectives
+
+Build a runnable application demonstrating progressively stronger GraphQL security:
+
+```text
+Authentication
+      │
+      ▼
+Named GraphQL operations
+      │
+      ▼
+Operation allow-list
+      │
+      ▼
+Operation → root-field validation
+      │
+      ▼
+Permission-based authorization
+      │
+      ▼
+Tenant / ownership authorization
+      │
+      ▼
+Sensitive field authorization
+      │
+      ▼
+PostgreSQL
+```
+
+The POC should explicitly demonstrate why an operation-name allow-list is useful but insufficient by itself.
+
+Everything should run locally from the monorepo.
+
+---
+
+# 2. Technology stack
+
+### Backend
+
+```text
+Java 21+
+Spring Boot
+Spring for GraphQL
+Spring Security
+Spring Data JPA
+OAuth2 Resource Server
+PostgreSQL
+Flyway
+JUnit 5
+Testcontainers
+Gradle
+```
+
+### Authentication
+
+Use [Keycloak](https://www.keycloak.org/?utm_source=chatgpt.com) in Podman.
+
+Keycloak handles:
+
+```text
+Authentication
+JWT issuance
+Users
+Roles
+Login
+```
+
+Authorization policies remain in our Spring application.
+
+### Frontend
+
+```text
+React
+TypeScript
+Vite
+GraphQL client
+Keycloak authentication
+Vitest
+```
+
+I'd use [Vite](https://vite.dev/?utm_source=chatgpt.com) + React + TypeScript and initially use a lightweight GraphQL client rather than introducing a large amount of client infrastructure.
+
+### Infrastructure
+
+```text
+Podman Compose
+PostgreSQL
+Keycloak
+```
+
+The Spring Boot and Vite applications can initially run directly from the development environment while their dependencies run through Podman Compose. We can optionally containerize both applications afterward.
+
+---
+
+# 3. Monorepo structure
+
+I'd use:
+
+```text
+graphql-security-poc/
+│
+├── README.md
+├── compose.yaml
+├── .gitignore
+│
+├── backend/
+│   ├── build.gradle
+│   ├── settings.gradle
+│   └── src/
+│       ├── main/
+│       │   ├── java/
+│       │   └── resources/
+│       │       ├── application.yml
+│       │       ├── graphql/
+│       │       │   └── schema.graphqls
+│       │       └── db/migration/
+│       └── test/
+│
+├── frontend/
+│   ├── package.json
+│   ├── vite.config.ts
+│   ├── tsconfig.json
+│   └── src/
+│       ├── auth/
+│       ├── graphql/
+│       ├── components/
+│       ├── pages/
+│       └── main.tsx
+│
+├── keycloak/
+│   └── realm-export.json
+│
+├── scripts/
+│   ├── start.sh
+│   ├── start-tmux.sh
+│   └── stop.sh
+│
+└── docs/
+    ├── architecture.md
+    ├── security-model.md
+    └── demo.md
+```
+
+No Node tooling is required at the repository root initially. `frontend` and `backend` remain independently buildable.
+
+---
+
+# 4. Example business domain
+
+Use a simple multi-tenant **Order Management** system.
+
+Entities:
+
+```text
+Tenant
+------
+id
+name
+
+
+User
+----
+id
+keycloakUserId
+username
+tenantId
+
+
+Order
+-----
+id
+tenantId
+customerId
+description
+amount
+status
+internalNotes
+```
+
+Order statuses:
+
+```text
+OPEN
+CANCELLED
+COMPLETED
+```
+
+The domain gives us several natural authorization scenarios.
+
+---
+
+# 5. Test users
+
+Keycloak should automatically import a development realm containing users such as:
+
+```text
+Tenant A
+
+alice
+Role: CUSTOMER
+
+bob
+Role: CUSTOMER
+
+support-a
+Role: SUPPORT
+
+admin-a
+Role: ADMIN
+
+
+Tenant B
+
+charlie
+Role: CUSTOMER
+
+support-b
+Role: SUPPORT
+
+admin-b
+Role: ADMIN
+```
+
+The database contains corresponding application users.
+
+Seed orders belonging to:
+
+```text
+Alice
+Bob
+Charlie
+```
+
+This gives us both ownership and tenant boundaries.
+
+---
+
+# 6. GraphQL schema
+
+Start with something like:
+
+```graphql
+type Query {
+    order(id: ID!): Order
+    myOrders: [Order!]!
+    orders: [Order!]!
+}
+
+type Mutation {
+    createOrder(input: CreateOrderInput!): Order!
+    updateOrder(id: ID!, input: UpdateOrderInput!): Order!
+    cancelOrder(id: ID!): Order!
+    deleteOrder(id: ID!): Boolean!
+}
+
+type Order {
+    id: ID!
+    description: String!
+    amount: Float!
+    status: OrderStatus!
+    customer: User!
+    internalNotes: String
+}
+
+type User {
+    id: ID!
+    username: String!
+}
+
+input CreateOrderInput {
+    description: String!
+    amount: Float!
+}
+
+input UpdateOrderInput {
+    description: String
+    amount: Float
+}
+
+enum OrderStatus {
+    OPEN
+    CANCELLED
+    COMPLETED
+}
+```
+
+---
+
+# 7. Authentication
+
+The React application authenticates against Keycloak.
+
+```text
+Browser
+   │
+   ▼
+Keycloak login
+   │
+   ▼
+Access token
+   │
+   ▼
+React
+   │
+   │ Authorization: Bearer <JWT>
+   ▼
+Spring Boot
+```
+
+Spring Security operates as an OAuth2 resource server and validates the JWT.
+
+From the authenticated principal we'll construct:
+
+```java
+public record CurrentUser(
+    String id,
+    String username,
+    String tenantId,
+    Set<Role> roles
+) {}
+```
+
+One important rule for the architecture:
+
+**React never determines whether an operation is authorized.**
+
+The UI can hide unavailable functionality for usability, but every security decision is enforced by Spring.
+
+---
+
+# 8. GraphQL operation-name security
+
+This is the first GraphQL-specific security layer.
+
+Require named operations:
+
+```graphql
+query GetOrder($id: ID!) {
+    order(id: $id) {
+        id
+        description
+    }
+}
+```
+
+Maintain an allow-list:
+
+```text
+GetOrder
+GetMyOrders
+GetOrders
+
+CreateOrder
+UpdateOrder
+CancelOrder
+DeleteOrder
+```
+
+Spring GraphQL instrumentation/interception determines the selected operation.
+
+Requests with:
+
+```text
+anonymous operation
+unknown operation
+invalid operationName
+```
+
+are rejected.
+
+---
+
+# 9. Demonstrate the operation-name vulnerability
+
+This is an intentional part of the POC.
+
+Allowed:
+
+```graphql
+query GetOrder {
+    order(id: "123") {
+        id
+    }
+}
+```
+
+But an attacker sends:
+
+```graphql
+query GetOrder {
+    orders {
+        id
+        amount
+        internalNotes
+    }
+}
+```
+
+The operation-name check sees:
+
+```text
+GetOrder
+```
+
+in both cases.
+
+The POC should contain an automated test demonstrating that **operation-name allow-listing alone doesn't secure GraphQL**.
+
+---
+
+# 10. Operation → GraphQL capability mapping
+
+Introduce a stronger policy:
+
+```text
+GetOrder
+    → Query.order
+
+GetMyOrders
+    → Query.myOrders
+
+GetOrders
+    → Query.orders
+
+CreateOrder
+    → Mutation.createOrder
+
+UpdateOrder
+    → Mutation.updateOrder
+
+CancelOrder
+    → Mutation.cancelOrder
+
+DeleteOrder
+    → Mutation.deleteOrder
+```
+
+Therefore:
+
+```graphql
+query GetOrder {
+    orders {
+        id
+    }
+}
+```
+
+is rejected because:
+
+```text
+operation:      GetOrder
+expected:       Query.order
+actual:         Query.orders
+```
+
+This gives us structural validation independent of the client-controlled operation name.
+
+---
+
+# 11. Application permissions
+
+Represent capabilities explicitly:
+
+```java
+public enum Permission {
+
+    ORDER_READ,
+    ORDER_READ_OWN,
+
+    ORDER_CREATE,
+
+    ORDER_UPDATE,
+    ORDER_UPDATE_OWN,
+
+    ORDER_CANCEL,
+    ORDER_CANCEL_OWN,
+
+    ORDER_DELETE,
+
+    ORDER_READ_INTERNAL
+}
+```
+
+Roles map to permissions.
+
+For example:
+
+```text
+CUSTOMER
+
+ORDER_READ_OWN
+ORDER_CREATE
+ORDER_UPDATE_OWN
+ORDER_CANCEL_OWN
+```
+
+```text
+SUPPORT
+
+ORDER_READ
+ORDER_UPDATE
+```
+
+```text
+ADMIN
+
+ORDER_READ
+ORDER_CREATE
+ORDER_UPDATE
+ORDER_CANCEL
+ORDER_DELETE
+ORDER_READ_INTERNAL
+```
+
+Application code checks permissions rather than hard-coding:
+
+```java
+if (role == ADMIN)
+```
+
+throughout the codebase.
+
+---
+
+# 12. Central authorization service
+
+Create:
+
+```java
+public interface AuthorizationService {
+
+    void requirePermission(
+        CurrentUser user,
+        Permission permission
+    );
+
+    void requireOrderAccess(
+        CurrentUser user,
+        Order order,
+        OrderAction action
+    );
+}
+```
+
+With:
+
+```text
+CodeBasedAuthorizationService
+```
+
+as the initial implementation.
+
+This becomes the abstraction boundary where Cerbos could eventually be introduced.
+
+---
+
+# 13. Tenant security
+
+Every order belongs to a tenant.
+
+For example:
+
+```text
+Alice
+tenant=A
+
+Order 100
+tenant=A
+
+Order 200
+tenant=B
+```
+
+Alice requesting Order 200 must fail regardless of her other permissions.
+
+Where possible, enforce this during retrieval:
+
+```java
+findByIdAndTenantId(
+    orderId,
+    currentUser.tenantId()
+)
+```
+
+rather than retrieving arbitrary records and filtering afterward.
+
+---
+
+# 14. Ownership security
+
+Customers can operate only on their own resources.
+
+For example:
+
+```text
+Alice → Alice's order
+ALLOW
+
+Alice → Bob's order
+DENY
+
+Alice → Charlie's order
+DENY
+```
+
+Support users can access orders belonging to their tenant:
+
+```text
+support-a → Alice
+ALLOW
+
+support-a → Bob
+ALLOW
+
+support-a → Charlie
+DENY
+```
+
+This demonstrates resource-level authorization rather than simply GraphQL-level authorization.
+
+---
+
+# 15. Sensitive GraphQL fields
+
+Use:
+
+```graphql
+Order.internalNotes
+```
+
+as the field-level security example.
+
+A normal customer might execute:
+
+```graphql
+query GetOrder($id: ID!) {
+    order(id: $id) {
+        id
+        description
+        amount
+    }
+}
+```
+
+but requesting:
+
+```graphql
+internalNotes
+```
+
+requires:
+
+```text
+ORDER_READ_INTERNAL
+```
+
+This demonstrates that permission to access an object doesn't necessarily grant permission to every field on that object.
+
+---
+
+# 16. React/Vite application
+
+The UI should be both a sample application and a **security demonstration console**.
+
+I'd give it four main screens.
+
+### Login / identity
+
+Authenticate through Keycloak and display:
+
+```text
+Logged in as: alice
+Tenant: A
+Roles: CUSTOMER
+```
+
+This makes switching between Alice, support and admin accounts useful during the demo.
+
+### My Orders
+
+Run:
+
+```graphql
+query GetMyOrders {
+    myOrders {
+        id
+        description
+        amount
+        status
+    }
+}
+```
+
+Customers see their own orders.
+
+### Order Management
+
+Support/admin users can browse tenant orders, inspect an order and perform permitted actions.
+
+The UI may conditionally show actions such as:
+
+```text
+Edit
+Cancel
+Delete
+View internal notes
+```
+
+but backend authorization remains authoritative.
+
+### Security Playground
+
+This is the most useful POC-specific frontend feature.
+
+Provide a textarea containing GraphQL:
+
+```graphql
+query GetOrder {
+    order(id: "...")
+    {
+        id
+        description
+    }
+}
+```
+
+along with:
+
+```text
+Operation name: GetOrder
+
+[Execute]
+```
+
+Display:
+
+```text
+HTTP status
+GraphQL response
+GraphQL errors
+authenticated user
+```
+
+This allows us to demonstrate attacks interactively rather than only through tests.
+
+---
+
+# 17. Security Playground scenarios
+
+Include predefined examples.
+
+```text
+✓ Valid GetOrder
+
+✗ Anonymous operation
+
+✗ Unknown operation
+
+✗ GetOrder using Query.orders
+
+✓ Customer reading own order
+
+✗ Customer reading another customer's order
+
+✗ Tenant A reading Tenant B order
+
+✗ Customer requesting internalNotes
+
+✓ Admin requesting internalNotes
+```
+
+Clicking a scenario loads the corresponding GraphQL request into the editor.
+
+This should make the POC very easy to present.
+
+---
+
+# 18. Frontend GraphQL organization
+
+Keep operations in `.graphql` files:
+
+```text
+frontend/src/graphql/
+
+├── queries/
+│   ├── GetOrder.graphql
+│   ├── GetMyOrders.graphql
+│   └── GetOrders.graphql
+│
+└── mutations/
+    ├── CreateOrder.graphql
+    ├── UpdateOrder.graphql
+    ├── CancelOrder.graphql
+    └── DeleteOrder.graphql
+```
+
+This has another useful consequence: the approved frontend operations are visible and auditable rather than being arbitrary strings distributed throughout React components.
+
+---
+
+# 19. Backend testing
+
+Security behaviour should primarily be covered through integration tests.
+
+```text
+OperationSecurityIT
+
+✓ allowsKnownOperation
+✓ rejectsUnknownOperation
+✓ rejectsAnonymousOperation
+✓ selectsRequestedOperation
+```
+
+Then:
+
+```text
+GraphQLCapabilitySecurityIT
+
+✓ allowsExpectedRootField
+✓ rejectsUnexpectedRootField
+✓ handlesFragments
+✓ handlesAliases
+```
+
+And:
+
+```text
+OrderAuthorizationIT
+
+✓ customerCanReadOwnOrder
+✓ customerCannotReadOtherCustomerOrder
+✓ supportCanReadTenantOrder
+✓ supportCannotReadOtherTenantOrder
+✓ adminCannotCrossTenantBoundary
+```
+
+Finally:
+
+```text
+FieldAuthorizationIT
+
+✓ adminCanReadInternalNotes
+✓ customerCannotReadInternalNotes
+✓ supportCannotReadInternalNotes
+```
+
+Testcontainers should run PostgreSQL during integration tests.
+
+---
+
+# 20. Frontend testing
+
+Use Vitest for React tests.
+
+Focus on application behaviour rather than trying to prove backend security from frontend tests:
+
+```text
+login state displayed correctly
+
+orders render correctly
+
+GraphQL errors displayed correctly
+
+security playground executes operations
+
+unauthorized responses displayed clearly
+```
+
+Backend integration tests remain the authoritative security tests.
+
+---
+
+# 21. Podman development environment
+
+Initial Compose services:
+
+```text
+compose.yaml
+
+├── postgres
+└── keycloak
+```
+
+Developers then run:
+
+```bash
+podman compose up -d
+
+cd backend
+./gradlew bootRun
+```
+
+and:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+giving approximately:
+
+```text
+React/Vite
+localhost:5173
+
+Spring GraphQL
+localhost:8080/graphql
+
+Keycloak
+localhost:8081
+
+PostgreSQL
+localhost:5432
+```
+
+We should avoid assuming those exact ports until the Compose file is written, because Keycloak and Spring commonly both default to 8080.
+
+---
+
+# 22. Full Podman environment
+
+Once functionality is working, add Containerfiles for:
+
+```text
+backend
+frontend
+```
+
+Then:
+
+```bash
+podman compose up --build
+```
+
+can start:
+
+```text
+React
+Spring Boot
+Keycloak
+PostgreSQL
+```
+
+from one command.
+
+That becomes the distributable POC.
+
+---
+
+# 23. Security progression
+
+The implementation should happen incrementally so each layer can be demonstrated.
+
+```text
+PHASE 1
+Basic Spring GraphQL API
+        │
+        ▼
+PHASE 2
+PostgreSQL / Flyway
+        │
+        ▼
+PHASE 3
+React + Vite
+        │
+        ▼
+PHASE 4
+Keycloak authentication
+        │
+        ▼
+PHASE 5
+Operation-name allow-list
+        │
+        ▼
+PHASE 6
+Demonstrate operation-name attack
+        │
+        ▼
+PHASE 7
+Operation → root-field validation
+        │
+        ▼
+PHASE 8
+Role → permission model
+        │
+        ▼
+PHASE 9
+Tenant authorization
+        │
+        ▼
+PHASE 10
+Ownership authorization
+        │
+        ▼
+PHASE 11
+Field-level authorization
+        │
+        ▼
+PHASE 12
+Security Playground
+        │
+        ▼
+PHASE 13
+Integration/security tests
+        │
+        ▼
+PHASE 14
+Full Podman packaging
+```
+
+---
+
+# 24. Final demo
+
+The end-to-end demonstration would be:
+
+```text
+1. Login as Alice
+
+2. View Alice's orders
+   → ALLOWED
+
+3. Request Bob's order
+   → DENIED: ownership
+
+4. Request Tenant B order
+   → DENIED: tenant
+
+5. Submit unknown operation
+   → DENIED: operation allow-list
+
+6. Rename malicious operation to GetOrder
+   → demonstrate why name-only checking is insufficient
+
+7. Enable/use structural validation
+   → DENIED: Query.orders isn't permitted for GetOrder
+
+8. Request internalNotes
+   → DENIED: field permission
+
+9. Login as Admin A
+
+10. Request internalNotes
+    → ALLOWED
+
+11. Admin A requests Tenant B order
+    → DENIED: tenant boundary
+```
+
+The last case is important: **ADMIN should mean administrator within a tenant, not automatically "can access the entire database."**
+
+# 25. POC completion criteria
+
+I'd consider the POC complete when a fresh checkout can run the whole system, predefined users can authenticate, React can execute the named GraphQL operations, PostgreSQL is initialized automatically, and automated tests demonstrate all four authorization layers:
+
+```text
+Operation
+   ↓
+GraphQL capability
+   ↓
+Resource
+   ↓
+Field
+```
