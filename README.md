@@ -20,6 +20,24 @@ The playground demonstrates the allowed operation name being paired with a disal
 
 ![Responsive customer orders view](docs/screenshots/03-mobile-orders.png)
 
+### Different tenant: Tenant B customer
+
+`charlie` is a customer in Tenant B. The customer view shows only Charlie's Tenant B order, demonstrating tenant isolation and ownership filtering; Tenant A orders are not visible.
+
+![Tenant B customer order isolation](docs/screenshots/04-tenant-b-customer.png)
+
+### Tenant A support role
+
+`support-a` can open Tenant management and see the operational orders for Tenant A. Support users can manage Tenant A records but do not receive the protected `internalNotes` field.
+
+![Tenant A support management view](docs/screenshots/05-tenant-a-support.png)
+
+### Tenant A administrator role
+
+`admin-a` has the Tenant A administrator view. Compared with the support view, the administrator can see protected internal notes and has the delete action for Tenant A orders.
+
+![Tenant A administrator management view](docs/screenshots/06-tenant-a-admin.png)
+
 ## Prerequisites
 
 - Java 21+
