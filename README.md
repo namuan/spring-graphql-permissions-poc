@@ -2,6 +2,24 @@
 
 A runnable local POC demonstrating authentication, operation contracts, root-field capability validation, role permissions, tenant isolation, ownership, and field-level authorization.
 
+## Screenshots
+
+The screenshots below were captured from the local application after signing in with the development `alice` account.
+
+### Customer orders
+
+![Customer orders view](docs/screenshots/01-customer-orders.png)
+
+### Security playground
+
+The playground demonstrates the allowed operation name being paired with a disallowed root field.
+
+![Security playground showing a rejected root-field mismatch](docs/screenshots/02-security-playground.png)
+
+### Responsive view
+
+![Responsive customer orders view](docs/screenshots/03-mobile-orders.png)
+
 ## Prerequisites
 
 - Java 21+
